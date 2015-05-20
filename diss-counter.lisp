@@ -1,45 +1,44 @@
 (defpackage #:diss-counter
   (:use :cl)
-  (:export #:make #:next #:diss-counter))
+  (:export #:diss-counter #:next #:diss-counter))
 
 (in-package #:diss-counter)
 
-(defclass diss-counter ()
-  ((elems
-    :initarg :elems
-    :accessor elems)
-   (prob-fun
-    :initarg :prob-fun
-    :accessor prob-fun)
-   (prob-sum
-    :initarg :prob-sum
-    :accessor prob-sum
-    :type double-float)))
+(defun square-count (x count)
+  (declare (ignore x)
+           (double-float count))
+  (the double-float (* count count)))
 
 (defstruct entry
   elem
   (count 0.0d0 :type double-float)
   (prob 0.0d0 :type double-float))
 
-(defun power-fun (x count)
-  (declare (ignore x)
-           (double-float count))
-  (the double-float (* count count)))
+(defclass diss-counter ()
+  ((elems
+    :accessor elems)
+   (prob-fun
+    :initarg :prob-fun
+    :initform #'square-count
+    :accessor prob-fun)
+   (prob-sum
+    :accessor prob-sum
+    :type double-float)))
 
-(defun make (elems &key (prob-fun #'power-fun) (initial-count 1.0d0))
-  (declare (optimize speed))
-  (let* ((size (length elems))
+(defmethod initialize-instance :after ((dc diss-counter) &key objs)
+  (let* ((prob-fun (slot-value dc 'prob-fun))
+         (size (length objs))
          (sum 0.0d0)
          (table (map-into (make-array size)
                           #'(lambda (x)
-                              (let ((prob (funcall prob-fun x initial-count)))
+                              (let ((prob (funcall prob-fun x 1.0d0)))
                                 (declare (double-float prob))
                                 (incf sum prob)
-                                (make-entry :elem x :count initial-count
+                                (make-entry :elem x :count 1.0d0
                                             :prob prob)))
-                          elems)))
-    (make-instance 'diss-counter :elems table :prob-fun prob-fun
-                   :prob-sum sum)))
+                          objs)))
+    (setf (slot-value dc 'elems) table
+          (slot-value dc 'prob-sum) sum)))
 
 (defun entry-increase (entry f)
   (incf (entry-count entry))
