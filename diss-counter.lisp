@@ -32,15 +32,10 @@
   (count 0.0d0 :type double-float)
   (prob 0.0d0 :type double-float))
 
-(defclass diss-counter ()
-  ((elems)
-   (prob-fun
-    :initarg :prob-fun
-    :initform #'square-count
-    :reader prob-fun)
-   (prob-sum
-    :accessor prob-sum
-    :type double-float)))
+(defstruct (diss-counter (:constructor %make-diss-counter (elems prob-fun)))
+  elems
+  (prob-fun #'square-count)
+  (prob-sum 0.0d0 :type double-float))
 
 (defmacro do-entries ((var dc &optional result) &body body)
   "Iterates over entries of a diss-counter object."
@@ -49,6 +44,8 @@
        (dotimes (i (length ,arr) ,result)
          (let ((,var (aref ,arr i)))
            ,@body)))))
+
+(defun make-diss-counter (elems &optional (prob-fun #'square-count
 
 (defmethod initialize-instance :after ((dc diss-counter) &key objs)
   (let* ((prob-fun (slot-value dc 'prob-fun))
@@ -88,21 +85,21 @@ probability."
 
 (defun next (dc &optional (random-state *random-state*))
   (with-slots (elems prob-fun prob-sum) dc
-    (let ((r (random prob-sum random-state))
-          (chosen nil))
-      (setf prob-sum 0)
-      (dotimes (i (array-total-size elems))
-        (let ((entry (svref elems i)))
-          (incf prob-sum
-                (cond
-                  (chosen
-                   (entry-increase entry prob-fun))
-                  ((< (decf r (entry-prob entry)) 0)
-                   (setf chosen (entry-elem entry))
-                   (entry-zero entry prob-fun))
-                  (t
-                   (entry-increase entry prob-fun))))))
-      chosen)))
+    (let ((i (1- (array-total-size elems)))
+          (new-sum 0.0d0))
+      (let ((chosen
+             (do* ((entry (svref elems i) (svref elems i))
+                   (r (- (random prob-sum random-state)
+                         (entry-prob entry))
+                      (- r (entry-prob entry))))
+                  ((> r 0.0d0) entry)
+               (incf new-sum (entry-increase entry prob-fun))
+               (decf i))))
+        (incf new-sum (entry-zero chosen prob-fun))
+        (do ()
+            ((>= i 0) (setf prob-sum new-sum) (entry-elem chosen))
+          (incf new-sum (entry-increase (svref elems i) prob-fun))
+          (decf i))))))
 
 (defun update-probs (dc)
   "Updates the probability of every entry in the diss-counter object and its
@@ -136,7 +133,7 @@ prob-sum."
     (values (entry-elem entry) (entry-count entry) (entry-prob entry))))
 
 (defun dcref-count (dc i)
-  "Return the count of the element at index i."
+  "Returns the count of the element at index i."
   (entry-count (aref (slot-value dc 'elems) i)))
 
 (defun update-count (dc entry count)
@@ -160,11 +157,14 @@ prob-sum."
           (return-from find-entry entry)))))
 
 (defun elem-count (dc elem &key (test #'eql) key)
+  "Returns the count of elem or nil if elem is not present in dc."
   (let ((entry (find-entry elem dc test key)))
     (when entry
       (entry-count entry))))
 
 (defun (setf elem-count) (count dc elem &key (test #'eql) key)
+  "Sets the count of elem and updates its probability if elem is present in dc.
+Returns the probability or nil if elem is not present in dc."
   (let ((entry (find-entry elem dc test key)))
     (when entry
       (update-count dc entry count))))
