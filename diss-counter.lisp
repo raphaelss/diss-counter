@@ -16,12 +16,13 @@
 
 (defpackage #:diss-counter
   (:use :cl)
-  (:export #:diss-counter #:next #:prob-fun #:reset-counts #:map-dc #:ref #:size
-           #:square-count #:prob-sum #:ref-count #:elem-count))
+  (:export #:diss-counter #:next #:prob-fun #:reset-counts #:map-dc #:dcref
+           #:size #:square-count #:prob-sum #:dcref-count #:elem-count))
 
 (in-package #:diss-counter)
 
 (defun square-count (x count)
+  "Default prob-fun that returns the square of the count as probability."
   (declare (ignore x)
            (double-float count))
   (the double-float (* count count)))
@@ -41,10 +42,11 @@
     :accessor prob-sum
     :type double-float)))
 
-(defmacro do-entries ((var dc &optional return) &body body)
+(defmacro do-entries ((var dc &optional result) &body body)
+  "Iterates over entries of a diss-counter object."
   (let ((arr (gensym "ELEM-ARRAY")))
     `(let ((,arr (slot-value 'elems ,dc)))
-       (dotimes (i (length ,arr) ,return)
+       (dotimes (i (length ,arr) ,result)
          (let ((,var (aref ,arr i)))
            ,@body)))))
 
@@ -63,22 +65,30 @@
           (slot-value dc 'prob-sum) sum)))
 
 (defun entry-update-prob (entry f)
+  "Calls f on the object and current count of entry to update its probability.
+Returns the probability."
   (setf (entry-prob entry)
         (funcall f (entry-elem entry) (entry-count entry))))
 
 (defun entry-update-count (entry count f)
+  "Sets the entry count and calls f on the object and count of entry to update
+its probability. Returns the probability."
   (setf (entry-count entry) count)
   (entry-update-prob entry f))
 
 (defun entry-increase (entry f)
+  "Sets count of entry to (1+ count) and updates its probability using f.
+Returns the probability."
   (entry-update-count entry (1+ (entry-count entry)) f))
 
 (defun entry-zero (entry f)
+  "Sets count of entry to 0 and updates its probability using f. Returns the
+probability."
   (entry-update-count entry 0.0d0 f))
 
-(defun next (dc)
+(defun next (dc &optional (random-state *random-state*))
   (with-slots (elems prob-fun prob-sum) dc
-    (let ((r (random prob-sum))
+    (let ((r (random prob-sum random-state))
           (chosen nil))
       (setf prob-sum 0)
       (dotimes (i (array-total-size elems))
@@ -95,6 +105,8 @@
       chosen)))
 
 (defun update-probs (dc)
+  "Updates the probability of every entry in the diss-counter object and its
+prob-sum."
   (let ((prob-sum 0.0d0)
         (f (prob-fun dc)))
     (do-entries (entry dc)
@@ -102,25 +114,29 @@
     (setf (slot-value 'prob-sum dc) prob-sum)))
 
 (defun (setf prob-fun) (f dc)
+  "Sets the prob-fun used by the diss-counter object and updates probabilities."
   (setf (slot-value 'prob-fun dc) f)
   (update-probs dc))
 
 (defun reset-counts (dc &optional (count 1))
+  "Sets the count of every element to count."
   (let ((prob-sum 0.0d0)
         (f (prob-fun dc)))
     (do-entries (entry dc)
       (incf prob-sum (entry-update-count entry count f)))
     (setf (slot-value 'prob-sum dc) prob-sum)))
 
-
 (defun size (dc)
+  "Returns the number of elements held in the diss-counter object."
   (length (slot-value 'elems dc)))
 
-(defun ref (dc i)
+(defun dcref (dc i)
+  "Returns (values elem count prob) of the element entry at index i."
   (let ((entry (aref (slot-value dc 'elems) i)))
     (values (entry-elem entry) (entry-count entry) (entry-prob entry))))
 
-(defun ref-count (dc i)
+(defun dcref-count (dc i)
+  "Return the count of the element at index i."
   (entry-count (aref (slot-value dc 'elems) i)))
 
 (defun update-count (dc entry count)
@@ -129,7 +145,7 @@
     (incf (slot-value dc 'prob-sum)
           (- new old))))
 
-(defun (setf ref-count) (count dc i)
+(defun (setf dcref-count) (count dc i)
   (let ((entry (aref (slot-value dc 'elems) i)))
     (update-count dc entry count)))
 
@@ -154,5 +170,6 @@
       (update-count dc entry count))))
 
 (defun map-dc (dc f)
+  "Applies f as in (f elem count probality) to every element in the obj."
   (do-entries (entry dc dc)
     (funcall f (entry-elem entry) (entry-count entry) (entry-prob entry))))
